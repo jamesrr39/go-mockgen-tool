@@ -1,4 +1,4 @@
-module jr39.eu/go-mockgen-tool
+module github.com/jamesrr39/go-mockgen-tool
 
 go 1.15
 

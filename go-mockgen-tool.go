@@ -6,8 +6,8 @@ import (
 	"log"
 	"strings"
 
+	"github.com/jamesrr39/go-mockgen-tool/mockgen"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
-	"jr39.eu/go-mockgen-tool/mockgen"
 )
 
 func main() {
