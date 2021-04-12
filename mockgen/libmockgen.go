@@ -6,10 +6,13 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"regexp"
 	"strings"
 )
 
 var ErrInterfaceTypeNotFound = errors.New("interface type not found")
+
+const internalFuncSuffix = "Func"
 
 type TypeData struct {
 	PackageName        string
@@ -22,11 +25,63 @@ type Type struct {
 	PackageName, TypeName, Name string
 }
 
+func (t Type) FullTypeName() string {
+	if t.PackageName == "" {
+		return t.TypeName
+	}
+
+	return fmt.Sprintf("%s.%s", t.PackageName, t.TypeName)
+}
+
 type Method struct {
 	Name        string
 	Params      []Type
 	ReturnTypes []Type
-	Signature   string
+}
+
+func (method Method) ParamNames() []string {
+	var paramNames []string
+	for i, param := range method.Params {
+		paramName := param.Name
+		if paramName == "" {
+			paramName = fmt.Sprintf("param%d", i)
+		}
+		paramNames = append(paramNames, paramName)
+	}
+
+	return paramNames
+}
+
+func (method Method) ParamsWithTypes() string {
+	var fullParamFragments []string
+	for i, param := range method.Params {
+		paramName := param.Name
+		if paramName == "" {
+			paramName = fmt.Sprintf("param%d", i)
+		}
+		fullParamFragments = append(fullParamFragments, fmt.Sprintf("%s %s", paramName, param.FullTypeName()))
+	}
+
+	return strings.Join(fullParamFragments, ", ")
+}
+
+func (method Method) ReturnTypesAsString() string {
+	var returnFragments []string
+	for _, ret := range method.ReturnTypes {
+		returnFragments = append(returnFragments, ret.FullTypeName())
+	}
+
+	var retSignature string
+	switch len(returnFragments) {
+	case 0:
+		// do nothing, should be empty string
+	case 1:
+		retSignature = fmt.Sprintf("%s ", returnFragments[0])
+	default:
+		retSignature = fmt.Sprintf("(%s) ", strings.Join(returnFragments, ", "))
+	}
+
+	return retSignature
 }
 
 func GetMethodsForType(sourceCode, interfaceName string) (*TypeData, error) {
@@ -91,41 +146,28 @@ func GetMethodsForType(sourceCode, interfaceName string) (*TypeData, error) {
 							for _, paramType := range paramTypesInMethod {
 								if paramType.PackageName != "" {
 									importPathShortNames[paramType.PackageName] = struct{}{}
-									println("adding::", paramType.PackageName)
 								}
 							}
 
 							paramTypes = append(paramTypes, paramTypesInMethod...)
-							// println("pnt:", paramNameText)
-
-							// for _, name := range param.Names {
-							// 	paramNames = append(paramNames, name.Name)
-							// }
 						}
 						if t.Results != nil {
-							// for _, l := range t.Results.List {
-							// 	println("names::", getNameForAstNode(sourceCode, l.Type))
-							// 	for _, n := range l.Names {
-							// 		println(n.Name, n.Obj)
-
-							// 	}
-							// 	returnTypes = append(returnTypes, getNameForAstNode(sourceCode, l))
-							// }
-
-							returnTypesFromMethods := getTypesFromText(getNameForAstNode(sourceCode, t.Results))
+							retText := getNameForAstNode(sourceCode, t.Results)
+							if strings.HasPrefix(retText, "(") {
+								retText = strings.TrimPrefix(retText, "(")
+								retText = strings.TrimSuffix(retText, ")")
+							}
+							returnTypesFromMethods := getTypesFromText(retText)
 
 							for _, returnType := range returnTypesFromMethods {
 								if returnType.PackageName != "" {
 									importPathShortNames[returnType.PackageName] = struct{}{}
-									println("adding::", returnType.PackageName)
 								}
 							}
 
 							returnTypes = append(returnTypes, returnTypesFromMethods...)
 						}
 					}
-
-					signature := getNameForAstNode(sourceCode, astField.Type)
 
 					for _, name := range names {
 						typeData.Methods = append(
@@ -134,7 +176,6 @@ func GetMethodsForType(sourceCode, interfaceName string) (*TypeData, error) {
 								name,
 								paramTypes,
 								returnTypes,
-								signature,
 							},
 						)
 
@@ -161,7 +202,6 @@ func GetMethodsForType(sourceCode, interfaceName string) (*TypeData, error) {
 			shortName = im.Name.Name
 		}
 		shortName = strings.Trim(shortName, `"`)
-		println("checking::", shortName)
 		_, ok := importPathShortNames[shortName]
 		if !ok {
 			// not required
@@ -173,22 +213,84 @@ func GetMethodsForType(sourceCode, interfaceName string) (*TypeData, error) {
 	return typeData, nil
 }
 
-// func namesToTypes(names []string) []Type {
-// 	var types []Type
-// 	for _, name := range names {
-// 		fragments := strings.Split(name, ".")
-// 		switch len(fragments) {
-// 		case 1:
-// 			types = append(types, Type{Name: fragments[0]})
-// 		case 2:
-// 			types = append(types, Type{PackageName: fragments[0], Name: fragments[1]})
+type shortPackageNameMapType map[string]struct{}
 
-// 		default:
-// 			panic(fmt.Sprintf("unexpected number of fragments (%d) in name: %q", len(fragments), name))
-// 		}
-// 	}
-// 	return types
-// }
+func currentTokenToParamsObjects(text string) []string {
+	text = strings.TrimSpace(text)
+
+	if funcDefRegex.MatchString(text) {
+		return []string{text}
+	}
+
+	// not func
+	spaceIdx := strings.Index(text, " ")
+	if spaceIdx == -1 {
+		return []string{text}
+	}
+	paramName := strings.TrimSpace(text[:spaceIdx])
+	typeName := strings.TrimSpace(text[spaceIdx:])
+
+	return []string{paramName, typeName}
+}
+
+func fullTypeToType(fullType string) Type {
+	if funcDefRegex.MatchString(fullType) {
+		return Type{TypeName: fullType}
+	}
+
+	dotIndex := strings.Index(fullType, ".")
+	if dotIndex == -1 {
+		return Type{TypeName: fullType}
+	}
+
+	return Type{
+		PackageName: fullType[:dotIndex],
+		TypeName:    fullType[dotIndex+1:],
+	}
+}
+
+func parseParams(str string) [][]string {
+	currentToken := new(currentTokenType)
+	var paramsObjects [][]string
+	var funcNestingLevel int
+
+	for _, c := range str {
+		switch c {
+		case ',':
+			if funcNestingLevel == 0 {
+				// if not 0, we are not finished with this yet. We either have no current token or we are in a function definition
+				paramsObjects = append(paramsObjects, currentTokenToParamsObjects(currentToken.Token))
+
+				// reset
+				currentToken = new(currentTokenType)
+			}
+		case '(':
+			funcNestingLevel++
+		case ')':
+			funcNestingLevel--
+		}
+
+		if funcNestingLevel == 0 && c == ',' {
+		} else {
+			currentToken.Token += string(c)
+		}
+	}
+
+	if funcNestingLevel > 0 {
+		panic("there was an unclosed function in: " + str)
+	}
+
+	// add remaining one to end
+	paramsObjects = append(paramsObjects, currentTokenToParamsObjects(currentToken.Token))
+
+	return paramsObjects
+}
+
+type currentTokenType struct {
+	Token string
+}
+
+var funcDefRegex = regexp.MustCompile(`^func\s*\(.*`)
 
 func getTypesFromText(str string) []Type {
 	// e.g.
@@ -196,37 +298,55 @@ func getTypesFromText(str string) []Type {
 	// mode, mode2 DriveMode
 	// DriveMode
 	// count int
-	fragments := strings.Split(str, " ")
-	switch len(fragments) {
-	case 0:
-		panic("unexpected 0 length fragments: " + str)
-	default:
-		fullTypeName := fragments[len(fragments)-1]
-		fullTypeNameFragments := strings.Split(fullTypeName, ".")
-		packageName := ""
-		typeName := fullTypeNameFragments[0]
-		if len(fullTypeNameFragments) > 1 {
-			packageName = fullTypeNameFragments[0]
-			typeName = fullTypeNameFragments[1]
-		}
-		if len(fragments) == 1 {
-			// just one, unnamed type
-			return []Type{{
-				PackageName: packageName,
-				TypeName:    typeName,
-			}}
-		}
+	// func(int, func(int, int))
 
+	paramsObjects := parseParams(str)
+
+	if len(paramsObjects) == 0 {
+		panic("unexpected 0 length fragments: " + str)
+	}
+
+	lastFragment := paramsObjects[len(paramsObjects)-1]
+	if len(lastFragment) == 1 {
+		// if the last parameter doesn't have a name, the definition only contains types, not names
 		var types []Type
-		for _, f := range fragments[:len(fragments)-1] {
-			types = append(types, Type{
-				PackageName: packageName,
-				TypeName:    typeName,
-				Name:        strings.Trim(f, ","),
-			})
+		for _, fragment := range paramsObjects {
+			types = append(types, fullTypeToType(fragment[0]))
 		}
 		return types
 	}
+
+	// definition contains named types
+	var previousType *Type
+	var types []Type
+	for i := len(paramsObjects) - 1; i >= 0; i-- {
+		paramFragments := paramsObjects[i]
+		var t Type
+		switch len(paramFragments) {
+		case 1:
+			t = *previousType
+			t.Name = paramFragments[0]
+		case 2:
+			t = fullTypeToType(paramFragments[1])
+			t.Name = paramFragments[0]
+		default:
+			panic(fmt.Sprintf("found unexpected number of fragments: %d", len(paramFragments)))
+		}
+
+		types = append(types, t)
+		previousType = &t
+	}
+
+	return reverseTypesSlice(types)
+}
+
+func reverseTypesSlice(in []Type) []Type {
+	out := make([]Type, len(in))
+	for i := len(in) - 1; i >= 0; i-- {
+		outPos := (len(in) - 1) - i
+		out[outPos] = in[i]
+	}
+	return out
 }
 
 func WriteMockType(interfaceName string, typeData *TypeData) string {
@@ -267,7 +387,8 @@ func createStructDef(typeData *TypeData, interfaceName string) string {
 	methodNameTemplate := fmt.Sprintf("\t%%-%ds func%%s\n", methodMaxLengthForPadding)
 	for _, method := range typeData.Methods {
 		methodName := method.Name + internalFuncSuffix
-		structDef += fmt.Sprintf(methodNameTemplate, methodName, method.Signature)
+		signature := fmt.Sprintf("(%s) %s", method.ParamsWithTypes(), method.ReturnTypesAsString())
+		structDef += fmt.Sprintf(methodNameTemplate, methodName, signature)
 	}
 	for _, embeddedInterface := range typeData.EmbeddedInterfaces {
 		structDef += fmt.Sprintf("\t%s\n", embeddedInterface)
@@ -286,6 +407,7 @@ func createMethodsDef(typeData *TypeData, interfaceName string) string {
 			returnKeywordText = "return "
 		}
 
+		var fullParamFragments []string
 		var paramNames []string
 		for i, param := range method.Params {
 			paramName := param.Name
@@ -293,16 +415,32 @@ func createMethodsDef(typeData *TypeData, interfaceName string) string {
 				paramName = fmt.Sprintf("param%d", i)
 			}
 			paramNames = append(paramNames, paramName)
+			fullParamFragments = append(fullParamFragments, fmt.Sprintf("%s %s", paramName, param.FullTypeName()))
+		}
+
+		var returnFragments []string
+		for _, ret := range method.ReturnTypes {
+			returnFragments = append(returnFragments, ret.FullTypeName())
+		}
+
+		var retSignature string
+		switch len(returnFragments) {
+		case 0:
+			// do nothing, should be empty string
+		case 1:
+			retSignature = fmt.Sprintf("%s ", returnFragments[0])
+		default:
+			retSignature = fmt.Sprintf("(%s) ", strings.Join(returnFragments, ", "))
 		}
 
 		methodsDef += fmt.Sprintf(`
-func (o *Mock%s) %s%s {
+func (o *Mock%s) %s(%s) %s{
 	if o.%sFunc == nil {
 		panic("%sFunc not defined")
 	}
 	%so.%s%s(%s)
 }
-`, interfaceName, method.Name, method.Signature,
+`, interfaceName, method.Name, strings.Join(fullParamFragments, ", "), retSignature,
 			method.Name,
 			method.Name,
 			returnKeywordText, method.Name, internalFuncSuffix, strings.Join(paramNames, ", "))
@@ -313,5 +451,3 @@ func (o *Mock%s) %s%s {
 func getNameForAstNode(sourceCode string, node ast.Node) string {
 	return sourceCode[node.Pos()-1 : node.End()-1]
 }
-
-const internalFuncSuffix = "Func"

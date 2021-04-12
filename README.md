@@ -13,7 +13,7 @@ For an example, see the [example folder](./example). It shows an interface with 
 Features supported:
 
 - Functions with and without parameters and return types
-- Functions with more complex return types, e.g. functions that return functions
+- Functions with more complex parameters and return types, e.g. functions that return functions
 - Embedded interfaces both in the same package and different packages
 - Package aliasing
 

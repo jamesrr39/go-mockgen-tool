@@ -4,21 +4,20 @@ package example
 
 import (
 	"io"
-	osfs "os"
 	"github.com/jamesrr39/go-mockgen-tool/example/extrapkg"
+	"github.com/jamesrr39/go-mockgen-tool/example/extrapkg2"
 )
 
 type MockVehicle struct {
-	NameFunc         func() string
-	WheelCountFunc   func() (int, error)
-	test2Func        func(mode, mode2 DriveMode) func(cargoWeightKg float64) (float64, error)
-	GetReaderFunc    func() io.Reader
-	DoSomethingFunc  func()
-	DoSomething2Func func(err1, err2 extrapkg.Error, a int)
-	DoSomething3Func func(extrapkg.Error, int, func(a, b string) extrapkg.Error)
+	NameFunc         func() string 
+	WheelCountFunc   func() (int, error) 
+	test2Func        func(mode DriveMode, mode2 DriveMode) func(cargoWeightKg float64) (float64, error) 
+	GetReaderFunc    func() io.Reader 
+	DoSomethingFunc  func() 
+	DoSomething2Func func(err1 extrapkg.Error, err2 extrapkg.Error, a int) extrapkg2.Error2 
+	DoSomething3Func func(param0 extrapkg.Error, param1 int, param2 func(a, b string) extrapkg.Error) 
 	io.Writer
 	SecondInterface
-	osfs.Signal
 }
 
 func (o *MockVehicle) Name() string {
@@ -35,7 +34,7 @@ func (o *MockVehicle) WheelCount() (int, error) {
 	return o.WheelCountFunc()
 }
 
-func (o *MockVehicle) test2(mode, mode2 DriveMode) func(cargoWeightKg float64) (float64, error) {
+func (o *MockVehicle) test2(mode DriveMode, mode2 DriveMode) func(cargoWeightKg float64) (float64, error) {
 	if o.test2Func == nil {
 		panic("test2Func not defined")
 	}
@@ -56,16 +55,16 @@ func (o *MockVehicle) DoSomething() {
 	o.DoSomethingFunc()
 }
 
-func (o *MockVehicle) DoSomething2(err1, err2 extrapkg.Error, a int) {
+func (o *MockVehicle) DoSomething2(err1 extrapkg.Error, err2 extrapkg.Error, a int) extrapkg2.Error2 {
 	if o.DoSomething2Func == nil {
 		panic("DoSomething2Func not defined")
 	}
-	o.DoSomething2Func(err1, err2, a)
+	return o.DoSomething2Func(err1, err2, a)
 }
 
-func (o *MockVehicle) DoSomething3(extrapkg.Error, int, func(a, b string) extrapkg.Error) {
+func (o *MockVehicle) DoSomething3(param0 extrapkg.Error, param1 int, param2 func(a, b string) extrapkg.Error) {
 	if o.DoSomething3Func == nil {
 		panic("DoSomething3Func not defined")
 	}
-	o.DoSomething3Func(param0, param1, func(a, b, string))
+	o.DoSomething3Func(param0, param1, param2)
 }

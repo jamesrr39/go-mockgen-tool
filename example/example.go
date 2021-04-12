@@ -2,16 +2,21 @@ package example
 
 import (
 	"io"
-	"os"
 	osfs "os"
 
 	"github.com/jamesrr39/go-mockgen-tool/example/extrapkg"
+	"github.com/jamesrr39/go-mockgen-tool/example/extrapkg2"
 )
 
 type DriveMode int
 
 const (
 	DriveModeFast DriveMode = iota
+)
+
+var (
+	// compile time check that *MockVehicle implements Vehicle
+	_ Vehicle = &MockVehicle{}
 )
 
 //go:generate go-mockgen-tool --type Vehicle
@@ -22,15 +27,13 @@ type Vehicle interface {
 	GetReader() io.Reader
 	// DoSomething is a no-return function
 	DoSomething()
-	DoSomething2(err1, err2 extrapkg.Error, a int)
+	DoSomething2(err1, err2 extrapkg.Error, a int) extrapkg2.Error2
 	DoSomething3(extrapkg.Error, int, func(a, b string) extrapkg.Error)
 	io.Writer
 	// SecondInterface is an interface in the same package
 	SecondInterface
-	osfs.Signal
 }
 
 type SecondInterface interface {
-	os.FileInfo
-	io.WriteCloser
+	osfs.FileInfo
 }
