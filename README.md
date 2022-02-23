@@ -53,3 +53,7 @@ Features supported:
 - Package aliasing
 
 This probably don't support _every_ way to declare an interface. If you find something that doesn't work, but is valid Go, please open an issue.
+
+### Related projects
+
+- https://github.com/rjeczalik/interfaces: generate an interface from a given type
